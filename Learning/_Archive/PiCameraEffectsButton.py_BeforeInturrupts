@@ -1,0 +1,81 @@
+#!/usr/bin/python3
+from picamera import PiCamera
+from time import sleep
+import RPi.GPIO as GPIO
+from gpiozero import Button
+
+button = Button(26)
+
+# All effects available 
+globalEffectList = ['none','sketch','posterise','gpen','colorbalance','film','pastel','emboss','denoise','negative','blur','colorswap','colorpoint','saturation','hatch','watercolor','cartoon','deinterlace1','deinterlace2','washedout','solarize','oilpaint']
+# Set the current effect. 
+globalEffectCurr = 0
+globalEffectLeng = len(globalEffectList)-1
+
+# Function to change effect.
+def SetEffect(NewEffect):
+    global globalEffectList
+    global globalEffectCurr
+    print('Switching to effect ' + NewEffect)
+    camera.image_effect = NewEffect
+    camera.annotate_text = "Effect: %s" % NewEffect
+# End of function.
+
+# Function to cycle effects forward. 
+def NextEffect( ):
+    global globalEffectList
+    global globalEffectCurr
+    if globalEffectCurr == globalEffectLeng:
+        globalEffectCurr = 0
+    else:
+        globalEffectCurr = globalEffectCurr + 1
+    
+    NextEff = globalEffectList[globalEffectCurr]
+    
+    SetEffect(NextEff)
+# End of function.
+
+# Function to cycle effects backward.
+def PrevEffect( ):
+    global globalEffectList
+    global globalEffectCurr
+    if globalEffectCurr == 0:
+        globalEffectCurr = globalEffectLeng
+    else:
+        globalEffectCurr = globalEffectCurr - 1
+    NextEff = globalEffectList[globalEffectCurr]
+    SetEffect(NextEff)
+# End of Function
+
+camera = PiCamera()
+camera.rotation = 180
+camera.framerate = 15
+SetEffect('none')
+camera.start_preview()
+
+# Max Resolution
+#camera.resolution = (2592, 1944)
+#sleep(5)
+# 1080 monitor
+#camera.resolution = (1920, 1080)
+
+# Default text size is 32, range is 6-160.
+camera.annotate_text_size = 96
+
+#for effect in camera.IMAGE_EFFECTS:
+#    camera.image_effect = effect
+#    print(effect)    
+
+for effect in camera.IMAGE_EFFECTS:
+#    camera.image_effect = effect
+#    camera.annotate_text = "Effect: %s" % effect
+    while True:
+        button.wait_for_press()
+        #NextEffect()
+        PrevEffect()
+        sleep(0.5)
+        #if globalEffectCurr == 'oilpaint':
+        #    print('End of the line.')
+        #    break
+
+camera.stop_preview()
