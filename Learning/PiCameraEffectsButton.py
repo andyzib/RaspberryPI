@@ -1,13 +1,20 @@
 #!/usr/bin/python3
-from picamera import PiCamera
+#from picamera import PiCamera
+import picamera
 from time import sleep
+import time
 import RPi.GPIO as GPIO
+import os
+
 GPIO.setmode(GPIO.BCM)
 
 # Some constants to help make readable code. 
 BUTTON_NEXT = 26  # Next button, GPIO 26
 BUTTON_BACK = 16  # Back button, GPIO 16
 BUTTON_START = 21 # Start Button, GPIO 21
+
+# Number of Photos to Take
+NUMPHOTOS = 4
 
 # Milliseconds for switch bounce time.
 # 300 is too fast, 500 is too slow.
@@ -26,12 +33,28 @@ GPIO.setup(BUTTON_START, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 # Everything
 ## globalEffectList = ['none','sketch','posterise','gpen','colorbalance','film','pastel','emboss','denoise','negative','blur','colorswap','colorpoint','saturation','hatch','watercolor','cartoon','deinterlace1','deinterlace2','washedout','solarize','oilpaint']
 # Just the "good" ones?
-globalEffectList = ['none','sketch','posterise','emboss','negative','colorswap','hatch','watercolor','cartoon','washedout','solarize','oilpaint']
-# Set the current effect. 
+# List of effects to cycle through.
+globalEffectList = ['none','sketch','posterise','emboss','negative','colorswap',
+                    'hatch','watercolor','cartoon','washedout','solarize','oilpaint']
+# List of friendly names for the various effects.
+globalEffectDict = {'none': 'Normal','sketch':'Artist Sketch','posterise':'Poster','emboss':'Embossed',
+                    'negative':'Negative Zone','colorswap':'Swap Colors','hatch':'Crosshatch','watercolor':'Water Color',
+                    'cartoon':'Cartoon','washedout':'Washed Out','solarize':'Solar Flare','oilpaint':'Oil Painting'}
+# Set the current effect.
+# Current effect.
 globalEffectCurr = 0
+# Number of effects.
 globalEffectLeng = len(globalEffectList)-1
 
-camera = PiCamera()
+# Photobooth SessionID
+SessionID = 0
+
+# Working Directory
+globalWorkDir = '/home/aszbikowski/PhotoBooth_WorkDir'
+# Session Directory
+globalSessionDir = ''
+
+camera = picamera.PiCamera()
 camera.rotation = 180
 camera.framerate = 15
 # Default text size is 32, range is 6-160.
@@ -39,6 +62,8 @@ camera.annotate_text_size = 96
 
 # Set Camera Annotation Text.
 def SetAnnotate(aText):
+    #camera.annotate_background('Blue')
+    #camera.annotate_foreground('Yellow')
     camera.annotate_text = aText
 # End function. 
 
@@ -49,15 +74,17 @@ def SetEffect(NewEffect):
     global camera
     print('Switching to effect ' + NewEffect)
     camera.image_effect = NewEffect
-    SetAnnotate("Effect: %s" % NewEffect)
-    sleep(10)
-    SetAnnotate("")
+    SetAnnotate("Effect: %s" % globalEffectDict[NewEffect])
+    #sleep(10)
+    #SetAnnotate("")
 # End of function.
 
 # Function to cycle effects forward. 
 def NextEffect( ):
     global globalEffectList
     global globalEffectCurr
+    if SessionID != 0:
+        return False
     if globalEffectCurr == globalEffectLeng:
         globalEffectCurr = 0
     else:
@@ -71,13 +98,71 @@ def NextEffect( ):
 def PrevEffect( ):
     global globalEffectList
     global globalEffectCurr
+    if SessionID != 0:
+        return False
     if globalEffectCurr == 0:
         globalEffectCurr = globalEffectLeng
     else:
         globalEffectCurr = globalEffectCurr - 1
     NextEff = globalEffectList[globalEffectCurr]
     SetEffect(NextEff)
+    return True
 # End of Function
+
+def QuitGracefully():
+    camera.stop_preview()
+    camera.close()
+    GPIO.remove_event_detect(BUTTON_NEXT)
+    GPIO.remove_event_detect(BUTTON_BACK)
+    GPIO.remove_event_detect(BUTTON_START)
+    GPIO.cleanup()
+    quit("Quitting program gracefully.")
+# End of function
+
+# Generates a PhotoBoot Session
+def SetupPhotoboothSession():
+    global SessionID
+    global globalWorkDir
+    global globalSessionDir
+    SessionID = time.time() # Use UNIX epoc time as session ID.
+    # Create the Session Directory for storing photos.
+    globalSessionDir = globalWorkDir + '/' + str(SessionID)
+    os.makedirs(globalSessionDir, exist_ok=True)
+# End of function
+
+def TakePhoto( PhotoNum ):
+    global SessionID
+    global globalSessionDir
+    PhotoPath = globalSessionDir + '/' + str(PhotoNum) + '.jpg'
+    SetAnnotate('')
+    camera.capture(PhotoPath)
+# End of function
+
+def RunCountdown():
+    SetAnnotate('3')
+    sleep(1)
+    SetAnnotate('2')
+    sleep(1)
+    SetAnnotate('1')
+    sleep(1)
+    SetAnnotate('CHEESE!!!')
+    sleep(1)
+
+def ResetPhotoboothSession():
+    global SessionID
+    SessionID = 0
+# End of function
+
+def RunPhotoboothSession():
+    global NUMPHOTOS
+    remaingPhotos = NUMPHOTOS
+    SetupPhotoboothSession()
+    while remaingPhotos > 0:
+        RunCountdown()
+        TakePhoto(remaingPhotos)
+        remaingPhotos = remaingPhotos -1
+    ResetPhotoboothSession()
+# End of function.
 
 def callback_button_press(input_pin):
     if (input_pin == BUTTON_NEXT):
@@ -88,18 +173,13 @@ def callback_button_press(input_pin):
         PrevEffect()
     elif (input_pin == BUTTON_START):
         print("START button pressed!")
+        RunPhotoboothSession()
         QuitGracefully()
     else:
         print("Unknown button pressed!")
-# End of function. 
+# End of function.
 
-def QuitGracefully():
-    camera.stop_preview()
-    GPIO.cleanup()
-    quit("Quitting program gracefully.")
-# End of function
-
-# Define GPIO button press inturrupts. 
+# Define GPIO button press interrupts.
 GPIO.add_event_detect(BUTTON_NEXT, GPIO.FALLING, callback=callback_button_press, bouncetime=BOUNCE_TIME)
 GPIO.add_event_detect(BUTTON_BACK, GPIO.FALLING, callback=callback_button_press, bouncetime=BOUNCE_TIME)
 GPIO.add_event_detect(BUTTON_START, GPIO.FALLING, callback=callback_button_press, bouncetime=BOUNCE_TIME)
